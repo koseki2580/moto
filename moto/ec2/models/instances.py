@@ -88,19 +88,27 @@ class Instance(TaggedEC2Resource, BotoInstance, CloudFormationModel):
         nics = copy.deepcopy(kwargs.get("nics", []))
 
         launch_template_arg = kwargs.get("launch_template", {})
-        if launch_template_arg and not image_id:
-            # the image id from the template should be used
+        if launch_template_arg:
             template_version = ec2_backend._get_template_from_args(launch_template_arg)
+        else:
+            template_version = None
+        if template_version and not image_id:
+            # the image id from the template should be used
             self.image_id = template_version.image_id
         else:
             self.image_id = image_id
         # Check if we have tags to process
-        if launch_template_arg:
-            template_version = ec2_backend._get_template_from_args(launch_template_arg)
+        if template_version:
             tag_spec_set = template_version.data.get("TagSpecification", {})
             tags = convert_tag_spec(tag_spec_set)
             instance_tags = tags.get("instance", {})
             self.add_tags(instance_tags)
+            # the placement from the template should be used
+            placement = template_version.data.get("Placement", {}).get(
+                "AvailabilityZone", kwargs.get("placement", None)
+            )
+        else:
+            placement = kwargs.get("placement", None)
 
         self._state = InstanceState("running", 16)
         self._reason = ""
@@ -109,7 +117,6 @@ class Instance(TaggedEC2Resource, BotoInstance, CloudFormationModel):
         self.security_groups = security_groups
         self.instance_type: str = kwargs.get("instance_type", "m1.small")
         self.region_name = kwargs.get("region_name", "us-east-1")
-        placement = kwargs.get("placement", None)
         self.placement_hostid = kwargs.get("placement_hostid")
         self.subnet_id = kwargs.get("subnet_id")
         if not self.subnet_id:

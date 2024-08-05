@@ -2735,3 +2735,53 @@ def test_describe_instance_with_enhanced_monitoring():
     )["Reservations"][0]["Instances"]
 
     assert result[0]["Monitoring"] == {"State": "disabled"}
+
+
+@mock_aws
+def test_launch_instances_with_specified_az_in_template():
+    client = boto3.client("ec2", region_name="us-west-1")
+    for az in ["us-west-1a", "us-west-1b"]:
+        launch_template = client.create_launch_template(
+            LaunchTemplateName=f"{str(uuid4())}-{az}",
+            VersionDescription="test",
+            LaunchTemplateData={
+                "InstanceType": "t2.micro",
+                "Placement": {"AvailabilityZone": az},
+                "TagSpecifications": [
+                    {
+                        "ResourceType": "instance",
+                        "Tags": [
+                            {"Key": "Name", "Value": f"{az}"},
+                        ],
+                    },
+                ],
+            },
+        )
+        launch_template_id = launch_template["LaunchTemplate"]["LaunchTemplateId"]
+        client.run_instances(
+            LaunchTemplate={
+                "LaunchTemplateId": launch_template_id,
+                "Version": "$Default",
+            },
+            MinCount=1,
+            MaxCount=1,
+        )
+
+    result = client.describe_instances(
+        Filters=[
+            {
+                "Name": "instance-state-name",
+                "Values": [
+                    "running",
+                ],
+            },
+        ],
+    )["Reservations"]
+    assert (
+        result[0]["Instances"][0]["Placement"]["AvailabilityZone"]
+        == result[0]["Instances"][0]["Tags"][0]["Value"]
+    )
+    assert (
+        result[1]["Instances"][0]["Placement"]["AvailabilityZone"]
+        == result[1]["Instances"][0]["Tags"][0]["Value"]
+    )
